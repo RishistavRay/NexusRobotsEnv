@@ -34,45 +34,26 @@ class Robot:
         self.shelf_assigned = None
         self.shelf_custody = False
         self.shelf_delivered = False
+        self.instruction_start_time = -1
+        self.elapsed_time = 0  # basically make anmother called instruction assignment time, then check elapsed time to see how long it has been since robot moved then accordingly make it increment such that it reaches in 1 second. the increments wont be exactly same though 
         self.instructions = []
     
-    def has_reached_target(self, robot_pos, target_pos):
-        return robot_pos == target_pos
+    def has_reached_target(self, robot_pos, target_pos, epsilon=0.001):
+        # return robot_pos == target_pos
+        return abs(robot_pos[0] - target_pos[0]) < epsilon and abs(robot_pos[1] - target_pos[1]) < epsilon
     
     def logical_to_display(self, logical_pos):
         x, y = logical_pos
         return x * CELL_SIZE + PADDING, y * CELL_SIZE + PADDING
-
-    def move_robot(self, robot_pos, target_pos):
-        self.state = "active"
-        x, y = robot_pos
-        target_x, target_y = target_pos
-
-        # Move in x direction
-        if x < target_x:
-            x += min(ROBOT_SPEED, target_x - x)
-            if self.shelf_custody:
-                if self.shelf_assigned.x < target_x:
-                    self.shelf_assigned.x += min(ROBOT_SPEED, target_x - self.shelf_assigned.x)
-        elif x > target_x:
-            x -= min(ROBOT_SPEED, x - target_x)
-            if self.shelf_custody:
-                if self.shelf_assigned.x > target_x:
-                    self.shelf_assigned.x -= min(ROBOT_SPEED, x - target_x)
-
-        # Move in y direction
-        if y < target_y:
-            y += min(ROBOT_SPEED, target_y - y)
-            if self.shelf_custody:
-                if self.shelf_assigned.y < target_y:
-                    self.shelf_assigned.y += min(ROBOT_SPEED, target_y - self.shelf_assigned.y)
-        elif y > target_y:
-            y -= min(ROBOT_SPEED, y - target_y)
-            if self.shelf_custody:
-                if self.shelf_assigned.y > target_y:
-                    self.shelf_assigned.y -= min(ROBOT_SPEED, y - target_y)
-        return x, y
     
+    def move_robot(self, robot_pos, target_pos, current_time, start_time, duration=1.0):
+        proportion = min((current_time - start_time) / duration, 1.0)
+        interpolated_x = robot_pos[0] + (target_pos[0] - robot_pos[0]) * proportion
+        interpolated_y = robot_pos[1] + (target_pos[1] - robot_pos[1]) * proportion
+        print("start_time: ", start_time, " current_time: ", current_time, "x: ", interpolated_x, " y: ", interpolated_y)
+
+        return interpolated_x, interpolated_y
+
     def reset(self):
         self.x, self.y = self.start_position
         self.state = "idle"
@@ -146,21 +127,22 @@ class Environment:
     def process_robot_instructions(self, current_time):
         for robot in self.robots:
             if robot.instructions:
-                # Get the first instruction in the list
                 current_instruction = robot.instructions[0]
-                display_robot1_pos = (robot.display_x, robot.display_y)
-                # Check if it's time to execute the instruction
                 if current_time >= current_instruction.start_time:
-                    if current_instruction.instruction == "move":
-                        display_robot1_target = robot.logical_to_display(current_instruction.target)
-                        display_robot1_pos = robot.move_robot(display_robot1_pos, display_robot1_target)
-                        robot.display_x, robot.display_y = display_robot1_pos
-                        print(f"Logical Position: ({robot.x}, {robot.y}), Display Position: ({robot.display_x:.1f}, {robot.display_y:.1f}), Time: {current_time}")
-                        if robot.has_reached_target(display_robot1_pos, display_robot1_target):
-                            robot.x, robot.y = current_instruction.target
-                            # robot.state = "idle"
-                            robot.instructions.pop(0)
-
+                    robot.display_x, robot.display_y = robot.move_robot(
+                        robot.logical_to_display((robot.x, robot.y)),
+                        robot.logical_to_display(current_instruction.target),
+                        current_time,
+                        current_instruction.start_time
+                    )
+                    # print(f"Logical Position: ({robot.x}, {robot.y}), Display Position: ({robot.display_x:.1f}, {robot.display_y:.1f}), Time: {current_time}")
+                    if robot.has_reached_target(
+                        (robot.display_x, robot.display_y),
+                        robot.logical_to_display(current_instruction.target)
+                    ):
+                        robot.x, robot.y = current_instruction.target
+                        robot.instructions.pop(0)
+                            
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -170,24 +152,71 @@ class Environment:
         start_ticks = pygame.time.get_ticks()  # Record the start time
         while self.running:
             current_ticks = pygame.time.get_ticks()
-            current_time = (current_ticks - start_ticks) // 1000  # Calculate elapsed time in seconds
+            current_time = (current_ticks - start_ticks) / 1000  # Calculate elapsed time in seconds
 
             self.handle_events()
             self.process_robot_instructions(current_time)  # Process instructions based on the time
             self.draw_grid()
             self.draw_robots()
             pygame.display.flip()
-            self.clock.tick(80)
+            self.clock.tick(50)
 
 # Main execution
 environment = Environment()
 environment.add_robot(1, 1)
-environment.add_robot(5, 5)
-environment.instruct_robot(1, (2,1), 0, "move") #nahh it moves to 5 in one second i just have to initiate or maybe not i will think about it
+# environment.add_robot(5, 5)
+environment.instruct_robot(1, (2,1), 0, "move")
 environment.instruct_robot(1, (3,1), 1, "move")
 environment.instruct_robot(1, (4,1), 2, "move")
-# environment.instruct_robot(2, (5,6), 1, "move") #nahh it moves to 5 in one second i just have to initiate or maybe not i will think about it
+environment.instruct_robot(1, (5,1), 3, "move")
+environment.instruct_robot(1, (5,2), 4, "move")
+environment.instruct_robot(1, (5,3), 5, "move")
+# environment.instruct_robot(2, (5,6), 1, "move")
 # environment.instruct_robot(2, (5,7), 2, "move")
 # environment.instruct_robot(2, (5,8), 3, "move")
+
+# # Adding 5 new robots to the environment at different positions
+# environment.add_robot(2, 2)  # Robot 2 at position (2, 2)
+# environment.add_robot(3, 3)  # Robot 3 at position (3, 3)
+# environment.add_robot(4, 4)  # Robot 4 at position (4, 4)
+# environment.add_robot(5, 5)  # Robot 5 at position (5, 5)
+# environment.add_robot(6, 6)  # Robot 6 at position (6, 6)
+
+# # Instructing robots 2 to 6 to move 1 unit at a time in different directions
+# # Robot 2 (starting at (2, 2))
+# environment.instruct_robot(2, (3, 2), 0, "move")  # Move right (1 unit)
+# environment.instruct_robot(2, (3, 3), 1, "move")  # Move up (1 unit)
+# environment.instruct_robot(2, (2, 3), 2, "move")  # Move left (1 unit)
+# environment.instruct_robot(2, (2, 2), 3, "move")  # Move down (1 unit)
+# environment.instruct_robot(2, (3, 2), 4, "move")  # Move right again (1 unit)
+
+# # Robot 3 (starting at (3, 3))
+# environment.instruct_robot(3, (3, 4), 0, "move")  # Move up (1 unit)
+# environment.instruct_robot(3, (4, 4), 1, "move")  # Move right (1 unit)
+# environment.instruct_robot(3, (4, 3), 2, "move")  # Move down (1 unit)
+# environment.instruct_robot(3, (3, 3), 3, "move")  # Move left (1 unit)
+# environment.instruct_robot(3, (3, 4), 4, "move")  # Move up again (1 unit)
+
+# # Robot 4 (starting at (4, 4))
+# environment.instruct_robot(4, (5, 4), 0, "move")  # Move right (1 unit)
+# environment.instruct_robot(4, (5, 5), 1, "move")  # Move up (1 unit)
+# environment.instruct_robot(4, (6, 5), 2, "move")  # Move right (1 unit)
+# environment.instruct_robot(4, (6, 4), 3, "move")  # Move down (1 unit)
+# environment.instruct_robot(4, (5, 4), 4, "move")  # Move left again (1 unit)
+
+# # Robot 5 (starting at (5, 5))
+# environment.instruct_robot(5, (5, 6), 0, "move")  # Move up (1 unit)
+# environment.instruct_robot(5, (6, 6), 1, "move")  # Move right (1 unit)
+# environment.instruct_robot(5, (6, 5), 2, "move")  # Move down (1 unit)
+# environment.instruct_robot(5, (5, 5), 3, "move")  # Move left (1 unit)
+# environment.instruct_robot(5, (5, 6), 4, "move")  # Move up again (1 unit)
+
+# # Robot 6 (starting at (6, 6))
+# environment.instruct_robot(6, (7, 6), 0, "move")  # Move right (1 unit)
+# environment.instruct_robot(6, (7, 7), 1, "move")  # Move up (1 unit)
+# environment.instruct_robot(6, (6, 7), 2, "move")  # Move left (1 unit)
+# environment.instruct_robot(6, (6, 6), 3, "move")  # Move down (1 unit)
+# environment.instruct_robot(6, (7, 6), 4, "move")  # Move right again (1 unit)
+
 environment.run()
 pygame.quit()
